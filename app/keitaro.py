@@ -127,7 +127,7 @@ class KeitaroClient:
         name: str,
         countries: list[str],
         offer_id: int,
-    ) -> tuple[int, list[CampaignStream]]:
+    ) -> int:
         domain = self.find_domain(settings.keitaro_domain_name)
         group = self.find_group(settings.keitaro_group_name)
         source = self.find_source(settings.keitaro_source_name)
@@ -202,7 +202,7 @@ class KeitaroClient:
                 "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
             },
         )
-        return campaign_id, self.streams(campaign_id)
+        return campaign_id
 
     def _find_by_name(self, items: list[dict], name: str) -> DirectoryItem | None:
         expected = name.rstrip("/").casefold()

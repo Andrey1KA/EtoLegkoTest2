@@ -80,11 +80,11 @@ def create(form: CampaignForm) -> dict[str, str | bool]:
 
 
 @app.get("/campaigns/{keitaro_id}", response_class=HTMLResponse)
-def campaign_page(keitaro_id: int) -> str:
+def campaign_page(keitaro_id: int, show: int = Query(default=0)) -> str:
     view = campaign_view(keitaro_id)
     if view is None:
         raise HTTPException(status_code=404, detail="Кампания не найдена")
-    return streams_page(view)
+    return streams_page(view, show_streams=bool(show))
 
 
 @app.post("/campaigns/{keitaro_id}/fetch")

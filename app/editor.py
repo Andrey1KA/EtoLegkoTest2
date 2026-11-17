@@ -186,7 +186,18 @@ def page_chrome() -> str:
     """
 
 
-def streams_page(view: dict) -> str:
+def streams_page(view: dict, show_streams: bool = False) -> str:
+    if not show_streams:
+        body = ""
+    else:
+        body = _stream_blocks(view)
+    nav = f"/campaigns/{view['keitaro_id']}"
+    if show_streams:
+        nav += "?show=1"
+    return _streams_document(view, body, nav)
+
+
+def _stream_blocks(view: dict) -> str:
     blocks = []
     for stream in view["streams"]:
         title = (
@@ -240,7 +251,10 @@ def streams_page(view: dict) -> str:
   </table>
 </section>"""
         )
-    body = "".join(blocks) or "<p>Потоков ещё нет.</p>"
+    return "".join(blocks) or "<p>Потоков ещё нет.</p>"
+
+
+def _streams_document(view: dict, body: str, nav: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -306,7 +320,7 @@ def streams_page(view: dict) -> str:
   </header>
   <nav class="nav">
     <a href="/">Создание</a>
-    <a class="on" href="/campaigns/{view["keitaro_id"]}">Потоки</a>
+    <a class="on" href="{nav}">Потоки</a>
   </nav>
   <main>
   <p class="crumb"><a href="/">Campaigns</a> / {_escape(view["name"])} / Keitaro Streams</p>
@@ -333,14 +347,14 @@ def streams_page(view: dict) -> str:
     }}
 
     $("#fetch").on("click", function () {{
-      $("#result").text("Читаем потоки...");
+      $("#result").empty();
       $.ajax({{ url: location.pathname + "/fetch", method: "POST" }})
-        .done(function () {{ location.reload(); }})
+        .done(function () {{ location.href = location.pathname + "?show=1"; }})
         .fail(function (xhr) {{ showError(xhr, "Не удалось прочитать потоки"); }});
     }});
 
     function postOffer(section) {{
-      $("#result").text("Добавляем оффер...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/offers",
         method: "POST",
@@ -359,11 +373,10 @@ def streams_page(view: dict) -> str:
       if (query.length < 2) {{
         return;
       }}
-      $("#result").text("Ищем оффер...");
+      $("#result").empty();
       $.getJSON("/api/offers", {{ q: query }}, function (items) {{
         list.empty();
         if (!items.length) {{
-          $("#result").text("Ничего не найдено");
           return;
         }}
         $("#result").empty();
@@ -393,7 +406,6 @@ def streams_page(view: dict) -> str:
     $(".add").on("click", function () {{
       const section = $(this).closest("section");
       if (!section.find(".offer-id").val()) {{
-        $("#result").text("Выберите оффер из списка");
         return;
       }}
       postOffer(section);
@@ -401,7 +413,7 @@ def streams_page(view: dict) -> str:
 
     $(".push").on("click", function () {{
       const section = $(this).closest("section");
-      $("#result").text("Публикуем поток...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/push",
         method: "POST"
@@ -415,7 +427,7 @@ def streams_page(view: dict) -> str:
     $(".remove").on("click", function () {{
       const section = $(this).closest("section");
       const binding = $(this).data("binding");
-      $("#result").text("Снимаем оффер...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/remove",
         method: "POST"
@@ -429,7 +441,7 @@ def streams_page(view: dict) -> str:
     $(".pin").on("click", function () {{
       const section = $(this).closest("section");
       const binding = $(this).data("binding");
-      $("#result").text("Меняем пин...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/pin",
         method: "POST"
@@ -443,7 +455,7 @@ def streams_page(view: dict) -> str:
     $(".bring").on("click", function () {{
       const section = $(this).closest("section");
       const binding = $(this).data("binding");
-      $("#result").text("Возвращаем оффер...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/bring-back",
         method: "POST"
@@ -456,7 +468,7 @@ def streams_page(view: dict) -> str:
 
     $(".cancel").on("click", function () {{
       const section = $(this).closest("section");
-      $("#result").text("Отменяем черновик...");
+      $("#result").empty();
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/cancel",
         method: "POST"

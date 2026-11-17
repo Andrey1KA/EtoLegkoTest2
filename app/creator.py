@@ -1,10 +1,8 @@
-import json
-
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.keitaro import KeitaroClient
-from app.models import Campaign, Offer, Stream, StreamOffer
+from app.models import Campaign, Offer
 
 
 def save_created_campaign(
@@ -14,7 +12,6 @@ def save_created_campaign(
     offer_id: int,
     offer_name: str,
     keitaro_campaign_id: int,
-    streams: list,
 ) -> tuple[int, str]:
     offer = session.query(Offer).filter_by(keitaro_id=offer_id).one_or_none()
     if offer is None:
@@ -29,42 +26,6 @@ def save_created_campaign(
     )
     session.add(campaign)
     session.flush()
-
-    for item in streams:
-        kind = "offers" if item.offers else "plain"
-        snapshot = [
-            {
-                "keitaro_offer_id": stream_offer.offer_id,
-                "share": stream_offer.share,
-                "pinned": False,
-                "status": "active",
-                "position": index,
-            }
-            for index, stream_offer in enumerate(item.offers, start=1)
-        ]
-        stream = Stream(
-            campaign_id=campaign.id,
-            keitaro_id=item.id,
-            name=item.name,
-            position=item.position,
-            kind=kind,
-            synced_snapshot=json.dumps(snapshot),
-        )
-        session.add(stream)
-        session.flush()
-        if kind != "offers":
-            continue
-        for index, stream_offer in enumerate(item.offers, start=1):
-            session.add(
-                StreamOffer(
-                    stream_id=stream.id,
-                    offer_id=offer.id,
-                    position=index,
-                    share=stream_offer.share,
-                    pinned=False,
-                    status="active",
-                )
-            )
 
     keitaro_id = campaign.keitaro_id
     saved_name = campaign.name
@@ -88,7 +49,7 @@ def create_campaign(name: str, geo: str, offer_id: int) -> tuple[int, str]:
     if not matches:
         raise ValueError(f"Оффер {offer_id} не найден в Keitaro")
 
-    campaign_id, streams = client.create_campaign(cleaned_name, countries, offer_id)
+    campaign_id = client.create_campaign(cleaned_name, countries, offer_id)
     with SessionLocal() as session:
         return save_created_campaign(
             session,
@@ -97,5 +58,4 @@ def create_campaign(name: str, geo: str, offer_id: int) -> tuple[int, str]:
             offer_id,
             matches[0].name,
             campaign_id,
-            streams,
         )
