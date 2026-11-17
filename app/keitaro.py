@@ -85,6 +85,88 @@ class KeitaroClient:
             )
         return streams
 
+    def create_campaign(
+        self,
+        name: str,
+        countries: list[str],
+        offer_id: int,
+    ) -> tuple[int, list[CampaignStream]]:
+        domain = self.find_domain(settings.keitaro_domain_name)
+        group = self.find_group(settings.keitaro_group_name)
+        source = self.find_source(settings.keitaro_source_name)
+        missing = [
+            title
+            for title, item in (
+                ("домен", domain),
+                ("группа", group),
+                ("источник", source),
+            )
+            if item is None
+        ]
+        if missing:
+            raise KeitaroError("В Keitaro не найдены: " + ", ".join(missing))
+
+        campaign = self._request(
+            "POST",
+            "/admin_api/v1/campaigns",
+            {
+                "name": name,
+                "alias": name,
+                "type": "position",
+                "domain_id": domain.id,
+                "group_id": group.id,
+                "traffic_source_id": source.id,
+                "cost_type": "CPC",
+                "cost_value": 0,
+                "cost_currency": "USD",
+                "cost_auto": True,
+                "state": "active",
+                "uniqueness_method": "ip_ua",
+            },
+        )
+        campaign_id = campaign["id"]
+        self._request(
+            "POST",
+            "/admin_api/v1/streams",
+            {
+                "campaign_id": campaign_id,
+                "name": f"{','.join(countries)} -> Google",
+                "type": "regular",
+                "schema": "redirect",
+                "action_type": "http",
+                "action_payload": "https://google.com",
+                "position": 1,
+                "state": "active",
+                "collect_clicks": True,
+                "filter_or": False,
+                "offer_selection": "before_click",
+                "weight": 0,
+                "filters": [{"name": "country", "mode": "accept", "payload": countries}],
+                "offers": [],
+            },
+        )
+        self._request(
+            "POST",
+            "/admin_api/v1/streams",
+            {
+                "campaign_id": campaign_id,
+                "name": "Offers",
+                "type": "regular",
+                "schema": "landings",
+                "action_type": "http",
+                "action_payload": "",
+                "position": 2,
+                "state": "active",
+                "collect_clicks": True,
+                "filter_or": False,
+                "offer_selection": "before_click",
+                "weight": 0,
+                "filters": [],
+                "offers": [{"offer_id": offer_id, "share": 100, "state": "active"}],
+            },
+        )
+        return campaign_id, self.streams(campaign_id)
+
     def _find_by_name(self, items: list[dict], name: str) -> DirectoryItem | None:
         expected = name.rstrip("/").casefold()
         for item in items:
@@ -94,16 +176,27 @@ class KeitaroClient:
         return None
 
     def _get(self, path: str) -> dict | list:
+        return self._request("GET", path)
+
+    def _request(self, method: str, path: str, body: dict | None = None) -> dict | list:
         if not self._api_key:
             raise KeitaroError("В .env не задан KEITARO_API_KEY")
 
+        payload = None
+        headers = {
+            "Api-Key": self._api_key,
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        }
+        if body is not None:
+            payload = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+
         request = urllib.request.Request(
             self._base_url + path,
-            headers={
-                "Api-Key": self._api_key,
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0",
-            },
+            data=payload,
+            headers=headers,
+            method=method,
         )
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
