@@ -20,6 +20,7 @@ def campaign_view(keitaro_id: int) -> dict | None:
                     "name": binding.offer.name,
                     "share": binding.share,
                     "status": binding.status,
+                    "pinned": bool(binding.pinned),
                 }
                 for binding in sorted(stream.offers, key=lambda item: item.position)
             ]
@@ -109,6 +110,19 @@ def remove_offer(keitaro_id: int, stream_id: int, binding_id: int) -> None:
 
 def bring_back_offer(keitaro_id: int, stream_id: int, binding_id: int) -> None:
     _set_status(keitaro_id, stream_id, binding_id, "active", "Оффер уже в потоке")
+
+
+def toggle_pin(keitaro_id: int, stream_id: int, binding_id: int) -> None:
+    with SessionLocal() as session:
+        stream = _own_stream(session, keitaro_id, stream_id)
+        binding = session.get(StreamOffer, binding_id)
+        if binding is None or binding.stream_id != stream.id:
+            raise LookupError("Оффер в потоке не найден")
+        if binding.status != "active":
+            raise ValueError("Снятый оффер нельзя запинить")
+        binding.pinned = not binding.pinned
+        apply_shares(list(stream.offers))
+        session.commit()
 
 
 def push_stream(keitaro_id: int, stream_id: int) -> None:
@@ -204,6 +218,7 @@ def streams_page(view: dict) -> str:
     td, th {{ text-align: left; padding: 0.4rem; border-bottom: 1px solid #eee; }}
     tr.removed {{ color: #888; background: #eee; }}
     button, a.button {{ margin-right: 0.5rem; }}
+    .pin.on {{ background: #333; color: #fff; }}
   </style>
 </head>
 <body>
@@ -295,6 +310,20 @@ def streams_page(view: dict) -> str:
       }});
     }});
 
+    $(".pin").on("click", function () {{
+      const section = $(this).closest("section");
+      const binding = $(this).data("binding");
+      $("#result").text("Меняем пин...");
+      $.ajax({{
+        url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/pin",
+        method: "POST"
+      }}).done(function () {{
+        location.reload();
+      }}).fail(function (xhr) {{
+        showError(xhr, "Не удалось запинить долю");
+      }});
+    }});
+
     $(".bring").on("click", function () {{
       const section = $(this).closest("section");
       const binding = $(this).data("binding");
@@ -343,10 +372,18 @@ def _offer_row(offer: dict) -> str:
             "Remove</button>"
         )
         css = ""
+    pin = ""
+    if not removed:
+        mark = "on" if offer["pinned"] else ""
+        label = "Unpin" if offer["pinned"] else "Pin"
+        pin = (
+            f'<button type="button" class="pin {mark}" data-binding="{offer["id"]}">'
+            f"{label}</button> "
+        )
     return (
         f"<tr{css}>"
         f"<td>{name}</td>"
-        f"<td>{offer['share']}%</td>"
+        f"<td>{pin}{offer['share']}%</td>"
         f"<td>{button}</td>"
         "</tr>"
     )

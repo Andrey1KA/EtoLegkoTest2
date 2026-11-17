@@ -13,6 +13,7 @@ from app.editor import (
     push_stream,
     remove_offer,
     streams_page,
+    toggle_pin,
 )
 from app.keitaro import KeitaroClient, KeitaroError
 
@@ -92,6 +93,11 @@ def add_stream_offer(keitaro_id: int, stream_id: int, form: OfferForm) -> dict[s
 @app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers/{binding_id}/remove")
 def remove_stream_offer(keitaro_id: int, stream_id: int, binding_id: int) -> dict[str, bool]:
     return _call(lambda: remove_offer(keitaro_id, stream_id, binding_id))
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers/{binding_id}/pin")
+def pin_stream_offer(keitaro_id: int, stream_id: int, binding_id: int) -> dict[str, bool]:
+    return _call(lambda: toggle_pin(keitaro_id, stream_id, binding_id))
 
 
 @app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers/{binding_id}/bring-back")
