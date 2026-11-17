@@ -1,0 +1,12 @@
+test-task.md
+tz.md
+editor.md
+video-screens.md
+video-images/
+plan.md
+commits.md
+tz-images/
+.env
+__pycache__/
+.venv/
+*.db
