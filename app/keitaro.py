@@ -41,6 +41,10 @@ class KeitaroClient:
         self._base_url = config.keitaro_base_url.rstrip("/")
         self._api_key = config.keitaro_api_key
 
+    def offer(self, offer_id: int) -> KeitaroOffer:
+        item = self._get(f"/admin_api/v1/offers/{offer_id}")
+        return KeitaroOffer(id=item["id"], name=item["name"])
+
     def search_offers(self, query: str) -> list[KeitaroOffer]:
         needle = query.casefold()
         found = []

@@ -4,9 +4,8 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.creator import create_campaign
-from app.database import SessionLocal
+from app.editor import campaign_view, fetch_streams, streams_page
 from app.keitaro import KeitaroClient, KeitaroError
-from app.models import Campaign
 
 app = FastAPI()
 
@@ -53,23 +52,21 @@ def create(form: CampaignForm) -> dict[str, str | bool]:
 
 @app.get("/campaigns/{keitaro_id}", response_class=HTMLResponse)
 def campaign_page(keitaro_id: int) -> str:
-    with SessionLocal() as session:
-        campaign = session.query(Campaign).filter_by(keitaro_id=keitaro_id).one_or_none()
-        if campaign is None:
-            raise HTTPException(status_code=404, detail="Кампания не найдена")
-        title = campaign.name
-    return f"""<!DOCTYPE html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <title>{_escape(title)}</title>
-</head>
-<body>
-  <p>Кампания {_escape(title)}. Потоки появятся на следующем шаге.</p>
-  <p><a href="/">К форме</a></p>
-</body>
-</html>
-"""
+    view = campaign_view(keitaro_id)
+    if view is None:
+        raise HTTPException(status_code=404, detail="Кампания не найдена")
+    return streams_page(view)
+
+
+@app.post("/campaigns/{keitaro_id}/fetch")
+def fetch_campaign(keitaro_id: int) -> dict[str, bool]:
+    if campaign_view(keitaro_id) is None:
+        raise HTTPException(status_code=404, detail="Кампания не найдена")
+    try:
+        fetch_streams(keitaro_id)
+    except KeitaroError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    return {"ok": True}
 
 
 def _page() -> str:
@@ -155,12 +152,3 @@ def _page() -> str:
 </body>
 </html>
 """
-
-
-def _escape(value: str) -> str:
-    return (
-        value.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-    )
