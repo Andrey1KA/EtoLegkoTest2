@@ -219,6 +219,14 @@ def _page(campaigns: list[dict]) -> str:
   </main>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script>
+    function offerLabel(item) {{
+      const id = String(item.id);
+      if (item.name === id || item.name.indexOf(id + " ") === 0) {{
+        return item.name;
+      }}
+      return id + " " + item.name;
+    }}
+
     let timer = null;
 
     $("form").on("submit", function (event) {{
@@ -260,7 +268,7 @@ def _page(campaigns: list[dict]) -> str:
         $.getJSON("/api/offers", {{ q: query }}, function (items) {{
           const list = $("#offers").empty();
           items.forEach(function (item) {{
-            $("<li>").text(item.id + " " + item.name).on("click", function () {{
+            $("<li>").text(offerLabel(item)).on("click", function () {{
               $("#offer-id").val(item.id);
               $("#offer-query").val(item.name);
               list.empty();

@@ -319,6 +319,14 @@ def streams_page(view: dict) -> str:
   </main>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script>
+    function offerLabel(item) {{
+      const id = String(item.id);
+      if (item.name === id || item.name.indexOf(id + " ") === 0) {{
+        return item.name;
+      }}
+      return id + " " + item.name;
+    }}
+
     function showError(xhr, fallback) {{
       const detail = xhr.responseJSON && xhr.responseJSON.detail;
       $("#result").text(detail || fallback);
@@ -360,7 +368,7 @@ def streams_page(view: dict) -> str:
         }}
         $("#result").empty();
         items.forEach(function (item) {{
-          $("<li>").text(item.id + " " + item.name).on("click", function () {{
+          $("<li>").text(offerLabel(item)).on("click", function () {{
             section.find(".offer-id").val(item.id);
             section.find(".offer-query").val(item.name);
             list.empty();
