@@ -73,31 +73,7 @@ def fetch_streams(keitaro_id: int) -> None:
 
             stream.name = item.name
             stream.position = item.position
-            stream.kind = "offers" if item.offers else "plain"
-            _clear_offers(session, stream)
-            snapshot = []
-            for index, remote_offer in enumerate(item.offers, start=1):
-                offer = _local_offer(session, client, remote_offer.offer_id)
-                session.add(
-                    StreamOffer(
-                        stream_id=stream.id,
-                        offer_id=offer.id,
-                        position=index,
-                        share=remote_offer.share,
-                        pinned=False,
-                        status="active",
-                    )
-                )
-                snapshot.append(
-                    {
-                        "keitaro_offer_id": remote_offer.offer_id,
-                        "share": remote_offer.share,
-                        "pinned": False,
-                        "status": "active",
-                        "position": index,
-                    }
-                )
-            stream.synced_snapshot = json.dumps(snapshot)
+            _sync_offers(session, client, stream, item.offers)
         session.commit()
 
 
@@ -425,6 +401,76 @@ def _stream_by_keitaro_id(campaign: Campaign, keitaro_id: int) -> Stream | None:
         if stream.keitaro_id == keitaro_id:
             return stream
     return None
+
+
+def _sync_offers(session, client: KeitaroClient, stream: Stream, remote_offers) -> None:
+    saved = json.loads(stream.synced_snapshot or "[]")
+    known_ids = {item["keitaro_offer_id"] for item in saved}
+    previous = {binding.offer.keitaro_id: binding for binding in list(stream.offers)}
+    remote_ids = {item.offer_id for item in remote_offers}
+
+    for offer_id, binding in list(previous.items()):
+        if offer_id not in remote_ids and offer_id not in known_ids:
+            session.delete(binding)
+            del previous[offer_id]
+    session.flush()
+
+    snapshot = []
+    position = 1
+    for remote_offer in remote_offers:
+        local_offer = _local_offer(session, client, remote_offer.offer_id)
+        binding = previous.get(remote_offer.offer_id)
+        pinned = bool(binding.pinned) if binding is not None else False
+        if binding is None:
+            binding = StreamOffer(
+                stream_id=stream.id,
+                offer_id=local_offer.id,
+                position=position,
+                share=remote_offer.share,
+                pinned=False,
+                status="active",
+            )
+            session.add(binding)
+        else:
+            binding.position = position
+            binding.share = remote_offer.share
+            binding.pinned = pinned
+            binding.status = "active"
+        snapshot.append(
+            {
+                "keitaro_offer_id": remote_offer.offer_id,
+                "share": remote_offer.share,
+                "pinned": pinned,
+                "status": "active",
+                "position": position,
+            }
+        )
+        position += 1
+
+    missing = [
+        (offer_id, binding)
+        for offer_id, binding in previous.items()
+        if offer_id not in remote_ids
+    ]
+    missing.sort(key=lambda pair: pair[1].position)
+    for offer_id, binding in missing:
+        binding.position = position
+        binding.share = 0
+        binding.pinned = False
+        binding.status = "removed"
+        snapshot.append(
+            {
+                "keitaro_offer_id": offer_id,
+                "share": 0,
+                "pinned": False,
+                "status": "removed",
+                "position": position,
+            }
+        )
+        position += 1
+
+    stream.kind = "offers" if remote_offers or missing else "plain"
+    stream.synced_snapshot = json.dumps(snapshot)
 
 
 def _clear_offers(session, stream: Stream) -> None:
