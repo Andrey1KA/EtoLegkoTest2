@@ -4,7 +4,14 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.creator import create_campaign
-from app.editor import campaign_view, fetch_streams, streams_page
+from app.editor import (
+    add_offer,
+    campaign_view,
+    cancel_stream,
+    fetch_streams,
+    push_stream,
+    streams_page,
+)
 from app.keitaro import KeitaroClient, KeitaroError
 
 app = FastAPI()
@@ -13,6 +20,10 @@ app = FastAPI()
 class CampaignForm(BaseModel):
     name: str
     geo: str
+    offer_id: str = ""
+
+
+class OfferForm(BaseModel):
     offer_id: str = ""
 
 
@@ -64,6 +75,35 @@ def fetch_campaign(keitaro_id: int) -> dict[str, bool]:
         raise HTTPException(status_code=404, detail="Кампания не найдена")
     try:
         fetch_streams(keitaro_id)
+    except KeitaroError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    return {"ok": True}
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers")
+def add_stream_offer(keitaro_id: int, stream_id: int, form: OfferForm) -> dict[str, bool]:
+    if not form.offer_id.strip().isdigit():
+        raise HTTPException(status_code=400, detail="Выберите оффер из списка")
+    return _call(lambda: add_offer(keitaro_id, stream_id, int(form.offer_id)))
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/push")
+def push_campaign_stream(keitaro_id: int, stream_id: int) -> dict[str, bool]:
+    return _call(lambda: push_stream(keitaro_id, stream_id))
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/cancel")
+def cancel_campaign_stream(keitaro_id: int, stream_id: int) -> dict[str, bool]:
+    return _call(lambda: cancel_stream(keitaro_id, stream_id))
+
+
+def _call(action) -> dict[str, bool]:
+    try:
+        action()
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     except KeitaroError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
     return {"ok": True}

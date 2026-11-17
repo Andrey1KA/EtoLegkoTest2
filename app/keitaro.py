@@ -89,6 +89,39 @@ class KeitaroClient:
             )
         return streams
 
+    def replace_stream_offers(self, stream_id: int, offers: list[dict]) -> None:
+        current = self._get(f"/admin_api/v1/streams/{stream_id}")
+        body = {
+            "campaign_id": current["campaign_id"],
+            "name": current["name"],
+            "type": current["type"],
+            "schema": current["schema"],
+            "action_type": current["action_type"],
+            "action_payload": current["action_payload"],
+            "position": current["position"],
+            "state": current["state"],
+            "collect_clicks": current["collect_clicks"],
+            "filter_or": current["filter_or"],
+            "offer_selection": current["offer_selection"],
+            "weight": current["weight"],
+            "filters": current.get("filters") or [],
+            "landings": current.get("landings") or [],
+            "triggers": current.get("triggers") or [],
+            "offers": [
+                {
+                    "offer_id": item["offer_id"],
+                    "share": item["share"],
+                    "state": "active",
+                }
+                for item in offers
+            ],
+        }
+        if "action_options" in current:
+            body["action_options"] = current["action_options"]
+        if "comments" in current:
+            body["comments"] = current["comments"]
+        self._request("PUT", f"/admin_api/v1/streams/{stream_id}", body)
+
     def create_campaign(
         self,
         name: str,
