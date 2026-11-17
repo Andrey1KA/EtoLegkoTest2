@@ -1,0 +1,122 @@
+import json
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+
+from app.config import Settings, settings
+
+
+class KeitaroError(Exception):
+    pass
+
+
+@dataclass(frozen=True)
+class KeitaroOffer:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class DirectoryItem:
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class StreamOffer:
+    offer_id: int
+    share: int
+
+
+@dataclass(frozen=True)
+class CampaignStream:
+    id: int
+    name: str
+    position: int
+    offers: tuple[StreamOffer, ...]
+
+
+class KeitaroClient:
+    def __init__(self, config: Settings = settings) -> None:
+        self._base_url = config.keitaro_base_url.rstrip("/")
+        self._api_key = config.keitaro_api_key
+
+    def search_offers(self, query: str) -> list[KeitaroOffer]:
+        needle = query.casefold()
+        found = []
+        for item in self._get("/admin_api/v1/offers"):
+            offer = KeitaroOffer(id=item["id"], name=item["name"])
+            if needle in str(offer.id) or needle in offer.name.casefold():
+                found.append(offer)
+        return found
+
+    def find_domain(self, name: str) -> DirectoryItem | None:
+        expected = _host(name)
+        for item in self._get("/admin_api/v1/domains"):
+            if _host(str(item["name"])) == expected:
+                return DirectoryItem(id=item["id"], name=item["name"])
+        return None
+
+    def find_group(self, name: str) -> DirectoryItem | None:
+        return self._find_by_name(self._get("/admin_api/v1/groups?type=campaigns"), name)
+
+    def find_source(self, name: str) -> DirectoryItem | None:
+        return self._find_by_name(self._get("/admin_api/v1/traffic_sources"), name)
+
+    def campaign_name(self, campaign_id: int) -> str:
+        campaign = self._get(f"/admin_api/v1/campaigns/{campaign_id}")
+        return campaign["name"]
+
+    def streams(self, campaign_id: int) -> list[CampaignStream]:
+        payload = self._get(f"/admin_api/v1/campaigns/{campaign_id}/streams")
+        streams = []
+        for item in payload:
+            offers = tuple(
+                StreamOffer(offer_id=offer["offer_id"], share=offer["share"])
+                for offer in item.get("offers") or []
+            )
+            streams.append(
+                CampaignStream(
+                    id=item["id"],
+                    name=item["name"],
+                    position=item["position"],
+                    offers=offers,
+                )
+            )
+        return streams
+
+    def _find_by_name(self, items: list[dict], name: str) -> DirectoryItem | None:
+        expected = name.rstrip("/").casefold()
+        for item in items:
+            current = str(item["name"]).rstrip("/").casefold()
+            if current == expected:
+                return DirectoryItem(id=item["id"], name=item["name"])
+        return None
+
+    def _get(self, path: str) -> dict | list:
+        if not self._api_key:
+            raise KeitaroError("В .env не задан KEITARO_API_KEY")
+
+        request = urllib.request.Request(
+            self._base_url + path,
+            headers={
+                "Api-Key": self._api_key,
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as error:
+            detail = error.read().decode(errors="replace")
+            raise KeitaroError(f"Keitaro ответил {error.code}: {detail}") from error
+        except urllib.error.URLError as error:
+            raise KeitaroError(f"Нет соединения с Keitaro: {error.reason}") from error
+
+
+def _host(value: str) -> str:
+    host = value.strip().rstrip("/").casefold()
+    if "://" in host:
+        host = host.split("://", 1)[1]
+    return host
