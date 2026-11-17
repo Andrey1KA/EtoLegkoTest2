@@ -15,7 +15,12 @@ def campaign_view(keitaro_id: int) -> dict | None:
         streams = []
         for stream in sorted(campaign.streams, key=lambda item: item.position):
             offers = [
-                {"name": binding.offer.name, "share": binding.share}
+                {
+                    "id": binding.id,
+                    "name": binding.offer.name,
+                    "share": binding.share,
+                    "status": binding.status,
+                }
                 for binding in sorted(stream.offers, key=lambda item: item.position)
             ]
             streams.append(
@@ -122,6 +127,14 @@ def add_offer(keitaro_id: int, stream_id: int, offer_id: int) -> None:
         session.commit()
 
 
+def remove_offer(keitaro_id: int, stream_id: int, binding_id: int) -> None:
+    _set_status(keitaro_id, stream_id, binding_id, "removed", "Оффер уже снят")
+
+
+def bring_back_offer(keitaro_id: int, stream_id: int, binding_id: int) -> None:
+    _set_status(keitaro_id, stream_id, binding_id, "active", "Оффер уже в потоке")
+
+
 def push_stream(keitaro_id: int, stream_id: int) -> None:
     client = KeitaroClient()
     with SessionLocal() as session:
@@ -172,14 +185,7 @@ def streams_page(view: dict) -> str:
         if stream["kind"] != "offers":
             blocks.append(f'<section class="stream"><h2>{title}</h2></section>')
             continue
-        rows = "".join(
-            "<tr>"
-            f"<td>{_escape(offer['name'])}</td>"
-            f"<td>{offer['share']}%</td>"
-            '<td><button type="button" disabled>Remove</button></td>'
-            "</tr>"
-            for offer in stream["offers"]
-        )
+        rows = "".join(_offer_row(offer) for offer in stream["offers"])
         draft = ""
         if stream["dirty"]:
             draft = (
@@ -220,6 +226,7 @@ def streams_page(view: dict) -> str:
     li:hover {{ background: #f3f3f3; }}
     table {{ border-collapse: collapse; width: 100%; }}
     td, th {{ text-align: left; padding: 0.4rem; border-bottom: 1px solid #eee; }}
+    tr.removed {{ color: #888; background: #eee; }}
     button, a.button {{ margin-right: 0.5rem; }}
   </style>
 </head>
@@ -298,6 +305,34 @@ def streams_page(view: dict) -> str:
       }});
     }});
 
+    $(".remove").on("click", function () {{
+      const section = $(this).closest("section");
+      const binding = $(this).data("binding");
+      $("#result").text("Снимаем оффер...");
+      $.ajax({{
+        url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/remove",
+        method: "POST"
+      }}).done(function () {{
+        location.reload();
+      }}).fail(function (xhr) {{
+        showError(xhr, "Не удалось снять оффер");
+      }});
+    }});
+
+    $(".bring").on("click", function () {{
+      const section = $(this).closest("section");
+      const binding = $(this).data("binding");
+      $("#result").text("Возвращаем оффер...");
+      $.ajax({{
+        url: location.pathname + "/streams/" + section.data("stream") + "/offers/" + binding + "/bring-back",
+        method: "POST"
+      }}).done(function () {{
+        location.reload();
+      }}).fail(function (xhr) {{
+        showError(xhr, "Не удалось вернуть оффер");
+      }});
+    }});
+
     $(".cancel").on("click", function () {{
       const section = $(this).closest("section");
       $("#result").text("Отменяем черновик...");
@@ -314,6 +349,50 @@ def streams_page(view: dict) -> str:
 </body>
 </html>
 """
+
+
+def _offer_row(offer: dict) -> str:
+    removed = offer["status"] == "removed"
+    name = _escape(offer["name"])
+    if removed:
+        name = f"{name} (removed)"
+        button = (
+            f'<button type="button" class="bring" data-binding="{offer["id"]}">'
+            "Bring back</button>"
+        )
+        css = ' class="removed"'
+    else:
+        button = (
+            f'<button type="button" class="remove" data-binding="{offer["id"]}">'
+            "Remove</button>"
+        )
+        css = ""
+    return (
+        f"<tr{css}>"
+        f"<td>{name}</td>"
+        f"<td>{offer['share']}%</td>"
+        f"<td>{button}</td>"
+        "</tr>"
+    )
+
+
+def _set_status(
+    keitaro_id: int,
+    stream_id: int,
+    binding_id: int,
+    status: str,
+    already: str,
+) -> None:
+    with SessionLocal() as session:
+        stream = _own_stream(session, keitaro_id, stream_id)
+        binding = session.get(StreamOffer, binding_id)
+        if binding is None or binding.stream_id != stream.id:
+            raise LookupError("Оффер в потоке не найден")
+        if binding.status == status:
+            raise ValueError(already)
+        binding.status = status
+        apply_shares(list(stream.offers))
+        session.commit()
 
 
 def _rows(stream: Stream) -> list[dict]:

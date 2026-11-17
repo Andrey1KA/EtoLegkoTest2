@@ -6,10 +6,12 @@ from app.config import settings
 from app.creator import create_campaign
 from app.editor import (
     add_offer,
+    bring_back_offer,
     campaign_view,
     cancel_stream,
     fetch_streams,
     push_stream,
+    remove_offer,
     streams_page,
 )
 from app.keitaro import KeitaroClient, KeitaroError
@@ -85,6 +87,16 @@ def add_stream_offer(keitaro_id: int, stream_id: int, form: OfferForm) -> dict[s
     if not form.offer_id.strip().isdigit():
         raise HTTPException(status_code=400, detail="Выберите оффер из списка")
     return _call(lambda: add_offer(keitaro_id, stream_id, int(form.offer_id)))
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers/{binding_id}/remove")
+def remove_stream_offer(keitaro_id: int, stream_id: int, binding_id: int) -> dict[str, bool]:
+    return _call(lambda: remove_offer(keitaro_id, stream_id, binding_id))
+
+
+@app.post("/campaigns/{keitaro_id}/streams/{stream_id}/offers/{binding_id}/bring-back")
+def bring_stream_offer(keitaro_id: int, stream_id: int, binding_id: int) -> dict[str, bool]:
+    return _call(lambda: bring_back_offer(keitaro_id, stream_id, binding_id))
 
 
 @app.post("/campaigns/{keitaro_id}/streams/{stream_id}/push")
