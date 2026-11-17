@@ -13,7 +13,10 @@ def campaign_view(keitaro_id: int) -> dict | None:
         if campaign is None:
             return None
         streams = []
-        for stream in sorted(campaign.streams, key=lambda item: item.position):
+        for stream in sorted(
+            campaign.streams,
+            key=lambda item: (item.kind != "offers", item.position),
+        ):
             offers = [
                 {
                     "id": binding.id,
@@ -165,6 +168,24 @@ def cancel_stream(keitaro_id: int, stream_id: int) -> None:
         session.commit()
 
 
+def page_chrome() -> str:
+    return """
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: #f3f5f7; color: #243028; }
+    a { color: #1b6b3a; }
+    .top { display: flex; justify-content: space-between; align-items: center; padding: 0.55rem 1.25rem; background: #1b6b3a; color: #fff; }
+    .top span { font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; }
+    .nav { display: flex; gap: 0.2rem; padding: 0 1rem; background: #14343c; }
+    .nav a { color: #d5e4ea; text-decoration: none; padding: 0.72rem 0.9rem; }
+    .nav a.on, .nav a:hover { color: #fff; background: rgba(255,255,255,0.08); }
+    main { padding: 0 1.25rem 2.5rem; }
+    .crumb { margin: 0; padding: 0.8rem 0; color: #6d7880; font-size: 0.9rem; }
+    .crumb a { color: #1b6b3a; text-decoration: none; }
+    .card { background: #fff; border: 1px solid #e3e6ea; border-radius: 12px; padding: 1.15rem 1.2rem 1.25rem; box-shadow: 0 1px 2px rgba(20,32,26,0.04); }
+    h1 { margin: 0 0 0.2rem; font-size: 1.35rem; }
+    """
+
+
 def streams_page(view: dict) -> str:
     blocks = []
     for stream in view["streams"]:
@@ -173,7 +194,11 @@ def streams_page(view: dict) -> str:
             f"#{stream['keitaro_id']}"
         )
         if stream["kind"] != "offers":
-            blocks.append(f'<section class="stream"><h2>{title}</h2></section>')
+            blocks.append(
+                f'<section class="card stream plain"><h2>{title}</h2>'
+                "<p class='note'>Поток без офферов</p>"
+                "</section>"
+            )
             continue
         rows = "".join(_offer_row(offer) for offer in stream["offers"])
         draft = ""
@@ -184,21 +209,35 @@ def streams_page(view: dict) -> str:
                 '<button type="button" class="cancel">Cancel</button>'
                 "</p>"
             )
-        css = "stream dirty" if stream["dirty"] else "stream"
+        css = "card stream dirty" if stream["dirty"] else "card stream"
         blocks.append(
             f"""<section class="{css}" data-stream="{stream["id"]}">
-  <h2>{title}</h2>
-  {draft}
+  <div class="stream-head">
+    <h2>{title}</h2>
+    {draft}
+  </div>
   <table>
-    <thead><tr><th>Offer</th><th>Share</th><th></th></tr></thead>
-    <tbody>{rows}</tbody>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Share</th>
+        <th>Stats</th>
+        <th>Trends</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows}
+      <tr class="add-row">
+        <td colspan="5">
+          <input class="offer-query" placeholder="Оффер" autocomplete="off">
+          <input class="offer-id" type="hidden">
+          <button type="button" class="add">Add</button>
+          <ul class="found"></ul>
+        </td>
+      </tr>
+    </tbody>
   </table>
-  <p>
-    <input class="offer-query" placeholder="Оффер" autocomplete="off">
-    <input class="offer-id" type="hidden">
-    <button type="button" class="add">Add</button>
-  </p>
-  <ul class="found"></ul>
 </section>"""
         )
     body = "".join(blocks) or "<p>Потоков ещё нет.</p>"
@@ -208,28 +247,76 @@ def streams_page(view: dict) -> str:
   <meta charset="utf-8">
   <title>{_escape(view["name"])}</title>
   <style>
-    body {{ font-family: sans-serif; max-width: 50rem; margin: 2rem; background: #fff; }}
-    .stream {{ border: 1px solid #ccc; margin-top: 1rem; padding: 1rem; background: #fff; }}
-    .stream.dirty {{ background: #ffe58a; }}
-    ul {{ list-style: none; padding: 0; margin: 0; }}
-    li {{ padding: 0.3rem; cursor: pointer; }}
-    li:hover {{ background: #f3f3f3; }}
-    table {{ border-collapse: collapse; width: 100%; }}
-    td, th {{ text-align: left; padding: 0.4rem; border-bottom: 1px solid #eee; }}
-    tr.removed {{ color: #888; background: #eee; }}
-    button, a.button {{ margin-right: 0.5rem; }}
-    .pin.on {{ background: #333; color: #fff; }}
+    {page_chrome()}
+    .toolbar {{ display: flex; gap: 0.5rem; margin-bottom: 1rem; }}
+    .tool, .push, .cancel, .add, .remove, .bring, .pin {{
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      border: 1px solid #d5dbe3; background: #fff; color: #243028;
+      padding: 0.5rem 0.8rem; border-radius: 8px; font-size: 0.78rem;
+      font-weight: 650; letter-spacing: 0.03em; text-decoration: none;
+      cursor: pointer; white-space: nowrap;
+    }}
+    .tool {{ text-transform: uppercase; }}
+    .tool:hover, .add:hover, .remove:hover, .bring:hover, .cancel:hover {{ background: #f6f8f7; }}
+    .push {{ background: #1b6b3a; border-color: #1b6b3a; color: #fff; }}
+    .push:hover {{ background: #155a30; }}
+    #result:empty {{ display: none; }}
+    #result {{ margin: 0 0 0.8rem; color: #a40000; }}
+    .stream {{ margin-bottom: 1rem; overflow: visible; padding: 0; }}
+    .stream-head, .stream.plain {{ display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 0.85rem 1rem; }}
+    .stream.plain {{ display: block; }}
+    .stream h2 {{ margin: 0; font-size: 1rem; }}
+    .stream.dirty {{ background: #ffedad; border-color: #eed44d; }}
+    .stream.dirty .stream-head,
+    .stream.dirty th,
+    .stream.dirty td,
+    .stream.dirty .add-row td {{ background: transparent; }}
+    .stream.dirty tr.removed {{ background: rgba(0, 0, 0, 0.06); }}
+    .draft {{ display: flex; align-items: center; gap: 0.45rem; margin: 0; }}
+    .note {{ margin: 0 1rem 0.9rem; color: #6d7880; }}
+    table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+    th {{ color: #7b868e; font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; text-align: center; padding: 0.75rem; border-bottom: 1px solid #e8edf0; background: #fafbfc; }}
+    th:first-child {{ text-align: left; }}
+    th:nth-child(2) {{ width: 9.5rem; }}
+    th:nth-child(3), th:nth-child(4) {{ width: 6rem; }}
+    th:nth-child(5) {{ width: 8.5rem; }}
+    td {{ padding: 0.8rem 0.75rem; border-bottom: 1px solid #eef1f4; vertical-align: middle; overflow-wrap: anywhere; }}
+    td:nth-child(n+2) {{ text-align: center; }}
+    tr:last-child td {{ border-bottom: 0; }}
+    tr.removed {{ color: #8b949c; background: #f7f8f9; }}
+    .share-line {{ display: flex; align-items: center; justify-content: center; gap: 0.4rem; }}
+    .bar {{ height: 4px; margin-top: 0.4rem; border-radius: 99px; background: #e7ece8; overflow: hidden; }}
+    .bar span {{ display: block; height: 100%; background: #1b6b3a; }}
+    .muted {{ color: #c5ced4; }}
+    .offer-query {{ width: min(24rem, 70%); height: 2.3rem; padding: 0 0.7rem; border: 1px solid #d5dbe3; border-radius: 8px; font: inherit; }}
+    .add-row td {{ position: relative; background: #fcfdfc; }}
+    ul.found {{ position: absolute; z-index: 5; left: 0.75rem; width: min(36rem, calc(100% - 1.5rem)); top: 100%; margin: 0.35rem 0 0; padding: 0.25rem; list-style: none; background: #fff; border: 1px solid #e3e6ea; border-radius: 8px; box-shadow: 0 10px 28px rgba(20,32,26,0.12); max-height: 16rem; overflow: auto; }}
+    ul.found:empty {{ display: none; }}
+    li {{ padding: 0.5rem 0.65rem; border-radius: 6px; cursor: pointer; text-align: left; }}
+    li:hover {{ background: #f3f7f4; }}
+    .pin {{ width: 2rem; height: 2rem; padding: 0; justify-content: center; border-radius: 999px; color: #1b6b3a; }}
+    .pin svg {{ display: block; }}
+    .pin.on {{ background: #1b6b3a; border-color: #1b6b3a; color: #fff; }}
   </style>
 </head>
 <body>
-  <p><a href="/">К форме</a></p>
-  <h1>{_escape(view["name"])}</h1>
-  <p>
-    <button type="button" id="fetch">Fetch streams from KT</button>
-    <a href="{_escape(view["admin_url"])}">View in KT</a>
-  </p>
+  <header class="top">
+    <strong>Keitaro wrapper</strong>
+    <span>Development</span>
+  </header>
+  <nav class="nav">
+    <a href="/">Создание</a>
+    <a class="on" href="/campaigns/{view["keitaro_id"]}">Потоки</a>
+  </nav>
+  <main>
+  <p class="crumb"><a href="/">Campaigns</a> / {_escape(view["name"])} / Keitaro Streams</p>
+  <div class="toolbar">
+    <button type="button" id="fetch" class="tool">↓ Fetch streams from KT</button>
+    <a class="tool" href="{_escape(view["admin_url"])}">View in KT ↗</a>
+  </div>
   <p id="result"></p>
   {body}
+  </main>
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script>
     function showError(xhr, fallback) {{
@@ -244,32 +331,7 @@ def streams_page(view: dict) -> str:
         .fail(function (xhr) {{ showError(xhr, "Не удалось прочитать потоки"); }});
     }});
 
-    let timer = null;
-    $(".offer-query").on("input", function () {{
-      const section = $(this).closest("section");
-      section.find(".offer-id").val("");
-      clearTimeout(timer);
-      const query = $(this).val().trim();
-      timer = setTimeout(function () {{
-        const list = section.find(".found").empty();
-        if (query.length < 2) {{
-          return;
-        }}
-        $.getJSON("/api/offers", {{ q: query }}, function (items) {{
-          list.empty();
-          items.forEach(function (item) {{
-            $("<li>").text(item.id + " " + item.name).on("click", function () {{
-              section.find(".offer-id").val(item.id);
-              section.find(".offer-query").val(item.name);
-              list.empty();
-            }}).appendTo(list);
-          }});
-        }});
-      }}, 300);
-    }});
-
-    $(".add").on("click", function () {{
-      const section = $(this).closest("section");
+    function postOffer(section) {{
       $("#result").text("Добавляем оффер...");
       $.ajax({{
         url: location.pathname + "/streams/" + section.data("stream") + "/offers",
@@ -281,6 +343,52 @@ def streams_page(view: dict) -> str:
       }}).fail(function (xhr) {{
         showError(xhr, "Не удалось добавить оффер");
       }});
+    }}
+
+    function showOffers(section) {{
+      const query = section.find(".offer-query").val().trim();
+      const list = section.find(".found").empty();
+      if (query.length < 2) {{
+        return;
+      }}
+      $("#result").text("Ищем оффер...");
+      $.getJSON("/api/offers", {{ q: query }}, function (items) {{
+        list.empty();
+        if (!items.length) {{
+          $("#result").text("Ничего не найдено");
+          return;
+        }}
+        $("#result").empty();
+        items.forEach(function (item) {{
+          $("<li>").text(item.id + " " + item.name).on("click", function () {{
+            section.find(".offer-id").val(item.id);
+            section.find(".offer-query").val(item.name);
+            list.empty();
+          }}).appendTo(list);
+        }});
+      }}).fail(function () {{
+        $("#result").text("Не удалось найти оффер");
+      }});
+    }}
+
+    let timer = null;
+    $(".offer-query").on("input", function () {{
+      const section = $(this).closest("section");
+      section.find(".offer-id").val("");
+      section.find(".found").empty();
+      clearTimeout(timer);
+      timer = setTimeout(function () {{
+        showOffers(section);
+      }}, 500);
+    }});
+
+    $(".add").on("click", function () {{
+      const section = $(this).closest("section");
+      if (!section.find(".offer-id").val()) {{
+        $("#result").text("Выберите оффер из списка");
+        return;
+      }}
+      postOffer(section);
     }});
 
     $(".push").on("click", function () {{
@@ -377,13 +485,22 @@ def _offer_row(offer: dict) -> str:
         mark = "on" if offer["pinned"] else ""
         label = "Unpin" if offer["pinned"] else "Pin"
         pin = (
-            f'<button type="button" class="pin {mark}" data-binding="{offer["id"]}">'
-            f"{label}</button> "
+            f'<button type="button" class="pin {mark}" data-binding="{offer["id"]}" '
+            f'aria-label="{label}" title="{label}">'
+            '<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">'
+            '<path fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linejoin="round" d="M8 3h8v5l2 3v2H6v-2l2-3V3z"/>'
+            '<path fill="none" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" d="M12 13v8M9 3h6"/>'
+            "</svg></button> "
         )
     return (
         f"<tr{css}>"
         f"<td>{name}</td>"
-        f"<td>{pin}{offer['share']}%</td>"
+        f"<td><div class='share-line'>{pin}<b>{offer['share']}%</b></div>"
+        f"<div class='bar'><span style='width:{offer['share']}%'></span></div></td>"
+        "<td class='muted'>—</td>"
+        "<td class='muted'>—</td>"
         f"<td>{button}</td>"
         "</tr>"
     )
@@ -517,14 +634,13 @@ def _clear_offers(session, stream: Stream) -> None:
 
 
 def _local_offer(session, client: KeitaroClient, offer_id: int) -> Offer:
-    remote = client.offer(offer_id)
     offer = session.query(Offer).filter_by(keitaro_id=offer_id).one_or_none()
-    if offer is None:
-        offer = Offer(keitaro_id=remote.id, name=remote.name)
-        session.add(offer)
-        session.flush()
+    if offer is not None:
         return offer
-    offer.name = remote.name
+    remote = client.offer(offer_id)
+    offer = Offer(keitaro_id=remote.id, name=remote.name)
+    session.add(offer)
+    session.flush()
     return offer
 
 
